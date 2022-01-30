@@ -2,34 +2,36 @@ package runner
 
 import (
 	"errors"
+	"log"
+	"path/filepath"
+	"strings"
+
 	"github.com/datadog/stratus-red-team/internal/providers"
 	"github.com/datadog/stratus-red-team/internal/state"
 	"github.com/datadog/stratus-red-team/internal/utils"
 	"github.com/datadog/stratus-red-team/pkg/stratus"
-	"log"
-	"path/filepath"
-	"strings"
 )
 
 const StratusRunnerForce = true
 const StratusRunnerNoForce = false
 
 type Runner struct {
-	Technique        *stratus.AttackTechnique
-	TechniqueState   stratus.AttackTechniqueState
-	TerraformDir     string
-	ShouldForce      bool
-	TerraformManager TerraformManager
-	StateManager     state.StateManager
+	Technique      *stratus.AttackTechnique
+	TechniqueState stratus.AttackTechniqueState
+	ConfigDir      string
+	ShouldForce    bool
+	ConfigManager  ConfigManager
+	StateManager   state.StateManager
 }
 
 func NewRunner(technique *stratus.AttackTechnique, force bool) Runner {
 	stateManager := state.NewFileSystemStateManager(technique)
+	configManager, _ := NewConfigManager(technique, stateManager)
 	runner := Runner{
-		Technique:        technique,
-		ShouldForce:      force,
-		TerraformManager: NewTerraformManager(filepath.Join(stateManager.GetRootDirectory(), "terraform")),
-		StateManager:     stateManager,
+		Technique:     technique,
+		ShouldForce:   force,
+		ConfigManager: configManager,
+		StateManager:  stateManager,
 	}
 	runner.initialize()
 
@@ -38,7 +40,7 @@ func NewRunner(technique *stratus.AttackTechnique, force bool) Runner {
 
 func (m *Runner) initialize() {
 	m.ValidatePlatformRequirements()
-	m.TerraformDir = filepath.Join(m.StateManager.GetRootDirectory(), m.Technique.ID)
+	m.ConfigDir = filepath.Join(m.StateManager.GetRootDirectory(), m.Technique.ID)
 	m.TechniqueState = m.StateManager.GetTechniqueState()
 	if m.TechniqueState == "" {
 		m.TechniqueState = stratus.AttackTechniqueStatusCold
@@ -71,18 +73,18 @@ func (m *Runner) WarmUp() (map[string]string, error) {
 	}
 
 	if !willWarmUp {
-		outputs, err := m.StateManager.GetTerraformOutputs()
+		outputs, err := m.StateManager.GetOutputs()
 		return outputs, err
 	}
 
 	log.Println("Warming up " + m.Technique.ID)
-	outputs, err := m.TerraformManager.TerraformInitAndApply(m.TerraformDir)
+	outputs, err := m.ConfigManager.InitAndApply()
 	if err != nil {
 		return nil, buildErrorFromTerraformError(err)
 	}
 
 	// Persist outputs to disk
-	err = m.StateManager.WriteTerraformOutputs(outputs)
+	err = m.StateManager.WriteOutputs(outputs)
 	m.setState(stratus.AttackTechniqueStatusWarm)
 
 	if display, ok := outputs["display"]; ok {
@@ -108,7 +110,7 @@ func (m *Runner) Detonate() error {
 	if willWarmUp {
 		outputs, err = m.WarmUp()
 	} else {
-		outputs, err = m.StateManager.GetTerraformOutputs()
+		outputs, err = m.StateManager.GetOutputs()
 	}
 
 	if err != nil {
@@ -129,7 +131,7 @@ func (m *Runner) Revert() error {
 		return errors.New(m.Technique.ID + " is not in DETONATED state and should not need to be reverted, use --force to force")
 	}
 
-	outputs, err := m.StateManager.GetTerraformOutputs()
+	outputs, err := m.StateManager.GetOutputs()
 	if err != nil {
 		return errors.New("unable to retrieve outputs of " + m.Technique.ID + ": " + err.Error())
 	}
@@ -170,7 +172,7 @@ func (m *Runner) CleanUp() error {
 	// Nuke prerequisites
 	if m.Technique.PrerequisitesTerraformCode != nil {
 		log.Println("Cleaning up technique prerequisites with terraform destroy")
-		prerequisitesCleanupErr = m.TerraformManager.TerraformDestroy(m.TerraformDir)
+		prerequisitesCleanupErr = m.ConfigManager.Destroy()
 		if prerequisitesCleanupErr != nil {
 			log.Println("Warning: unable to cleanup TTP prerequisites: " + prerequisitesCleanupErr.Error())
 		}
@@ -181,7 +183,7 @@ func (m *Runner) CleanUp() error {
 	// Remove terraform directory
 	err := m.StateManager.CleanupTechnique()
 	if err != nil {
-		log.Println("Warning: unable to remove technique directory " + m.TerraformDir + ": " + err.Error())
+		log.Println("Warning: unable to remove technique directory " + m.ConfigDir + ": " + err.Error())
 	}
 
 	return utils.CoalesceErr(techniqueRevertErr, prerequisitesCleanupErr, err)

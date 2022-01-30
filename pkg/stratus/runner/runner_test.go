@@ -1,12 +1,13 @@
 package runner
 
 import (
+	"testing"
+
 	statemocks "github.com/datadog/stratus-red-team/internal/state/mocks"
 	"github.com/datadog/stratus-red-team/pkg/stratus"
 	"github.com/datadog/stratus-red-team/pkg/stratus/runner/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"testing"
 )
 
 func TestRunnerWarmUp(t *testing.T) {
@@ -19,7 +20,7 @@ func TestRunnerWarmUp(t *testing.T) {
 		TerraformOutputs      map[string]string
 		PersistedOutputs      map[string]string
 		// results
-		CheckExpectations func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, outputs map[string]string, err error)
+		CheckExpectations func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, outputs map[string]string, err error)
 	}
 
 	var scenario = []RunnerWarmupTestScenario{
@@ -28,8 +29,8 @@ func TestRunnerWarmUp(t *testing.T) {
 			Technique:             &stratus.AttackTechnique{ID: "foo"},
 			InitialTechniqueState: stratus.AttackTechniqueStatusCold,
 			PersistedOutputs:      map[string]string{"myoutput": "foo"},
-			CheckExpectations: func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, outputs map[string]string, err error) {
-				terraform.AssertNotCalled(t, "TerraformInitAndApply")
+			CheckExpectations: func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, outputs map[string]string, err error) {
+				terraform.AssertNotCalled(t, "InitAndApply")
 				state.AssertNotCalled(t, "ExtractTechnique")
 				assert.Nil(t, err)
 
@@ -42,10 +43,10 @@ func TestRunnerWarmUp(t *testing.T) {
 			Technique:             &stratus.AttackTechnique{ID: "foo", PrerequisitesTerraformCode: []byte("foo")},
 			InitialTechniqueState: stratus.AttackTechniqueStatusCold,
 			TerraformOutputs:      map[string]string{"myoutput": "new"},
-			CheckExpectations: func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, outputs map[string]string, err error) {
+			CheckExpectations: func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, outputs map[string]string, err error) {
 				state.AssertCalled(t, "ExtractTechnique")
-				terraform.AssertCalled(t, "TerraformInitAndApply", "/root/foo")
-				state.AssertCalled(t, "WriteTerraformOutputs", map[string]string{"myoutput": "new"})
+				terraform.AssertCalled(t, "InitAndApply")
+				state.AssertCalled(t, "WriteOutputs", map[string]string{"myoutput": "new"})
 				state.AssertCalled(t, "SetTechniqueState", stratus.AttackTechniqueState(stratus.AttackTechniqueStatusWarm))
 
 				assert.Nil(t, err)
@@ -58,8 +59,8 @@ func TestRunnerWarmUp(t *testing.T) {
 			Technique:             &stratus.AttackTechnique{ID: "foo", PrerequisitesTerraformCode: []byte("bar")},
 			InitialTechniqueState: stratus.AttackTechniqueStatusWarm,
 			PersistedOutputs:      map[string]string{"myoutput": "new"},
-			CheckExpectations: func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, outputs map[string]string, err error) {
-				terraform.AssertNotCalled(t, "TerraformInitAndApply")
+			CheckExpectations: func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, outputs map[string]string, err error) {
+				terraform.AssertNotCalled(t, "InitAndApply")
 				assert.Nil(t, err)
 				assert.Len(t, outputs, 1)
 				assert.Equal(t, "new", outputs["myoutput"])
@@ -71,8 +72,8 @@ func TestRunnerWarmUp(t *testing.T) {
 			ShouldForce:           true,
 			InitialTechniqueState: stratus.AttackTechniqueStatusWarm,
 			TerraformOutputs:      map[string]string{"myoutput": "old"},
-			CheckExpectations: func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, outputs map[string]string, err error) {
-				terraform.AssertCalled(t, "TerraformInitAndApply", "/root/foo")
+			CheckExpectations: func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, outputs map[string]string, err error) {
+				terraform.AssertCalled(t, "InitAndApply")
 				assert.Nil(t, err)
 				assert.Len(t, outputs, 1)
 				assert.Equal(t, "old", outputs["myoutput"])
@@ -83,8 +84,8 @@ func TestRunnerWarmUp(t *testing.T) {
 			Technique:             &stratus.AttackTechnique{ID: "foo", PrerequisitesTerraformCode: []byte("bar")},
 			InitialTechniqueState: stratus.AttackTechniqueStatusDetonated,
 			PersistedOutputs:      map[string]string{"myoutput": "old"},
-			CheckExpectations: func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, outputs map[string]string, err error) {
-				terraform.AssertNotCalled(t, "TerraformInitAndApply")
+			CheckExpectations: func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, outputs map[string]string, err error) {
+				terraform.AssertNotCalled(t, "InitAndApply")
 				assert.Nil(t, err)
 				assert.Len(t, outputs, 1)
 				assert.Equal(t, "old", outputs["myoutput"])
@@ -94,21 +95,21 @@ func TestRunnerWarmUp(t *testing.T) {
 
 	for i := range scenario {
 		state := new(statemocks.StateManager)
-		terraform := new(mocks.TerraformManager)
+		terraform := new(mocks.ConfigManager)
 
 		state.On("GetRootDirectory").Return("/root")
 		state.On("ExtractTechnique").Return(nil)
 		state.On("GetTechniqueState", mock.Anything).Return(scenario[i].InitialTechniqueState, nil)
-		state.On("GetTerraformOutputs").Return(scenario[i].PersistedOutputs, nil)
-		terraform.On("TerraformInitAndApply", mock.Anything).Return(scenario[i].TerraformOutputs, nil)
-		state.On("WriteTerraformOutputs", mock.Anything).Return(nil)
+		state.On("GetOutputs").Return(scenario[i].PersistedOutputs, nil)
+		terraform.On("InitAndApply", mock.Anything).Return(scenario[i].TerraformOutputs, nil)
+		state.On("WriteOutputs", mock.Anything).Return(nil)
 		state.On("SetTechniqueState", mock.Anything).Return(nil)
 
 		runner := Runner{
-			Technique:        scenario[i].Technique,
-			ShouldForce:      scenario[i].ShouldForce,
-			TerraformManager: terraform,
-			StateManager:     state,
+			Technique:     scenario[i].Technique,
+			ShouldForce:   scenario[i].ShouldForce,
+			ConfigManager: terraform,
+			StateManager:  state,
 		}
 		runner.initialize()
 		outputs, err := runner.WarmUp()
@@ -185,14 +186,14 @@ func TestRunnerDetonate(t *testing.T) {
 	for i := range scenario {
 		t.Run(scenario[i].Name, func(t *testing.T) {
 			state := new(statemocks.StateManager)
-			terraform := new(mocks.TerraformManager)
+			terraform := new(mocks.ConfigManager)
 
 			state.On("GetRootDirectory").Return("/root")
 			state.On("ExtractTechnique").Return(nil)
 			state.On("GetTechniqueState", mock.Anything).Return(scenario[i].TechniqueState, nil)
-			terraform.On("TerraformInitAndApply", mock.Anything).Return(map[string]string{}, nil)
-			state.On("WriteTerraformOutputs", mock.Anything).Return(nil)
-			state.On("GetTerraformOutputs").Return(map[string]string{}, nil)
+			terraform.On("InitAndApply", mock.Anything).Return(map[string]string{}, nil)
+			state.On("WriteOutputs", mock.Anything).Return(nil)
+			state.On("GetOutputs").Return(map[string]string{}, nil)
 			state.On("SetTechniqueState", mock.Anything).Return(nil)
 
 			var wasDetonated = false
@@ -205,9 +206,9 @@ func TestRunnerDetonate(t *testing.T) {
 					},
 					IsIdempotent: scenario[i].IsIdempotent,
 				},
-				ShouldForce:      scenario[i].Force,
-				TerraformManager: terraform,
-				StateManager:     state,
+				ShouldForce:   scenario[i].Force,
+				ConfigManager: terraform,
+				StateManager:  state,
 			}
 			runner.initialize()
 			err := runner.Detonate()
@@ -219,9 +220,9 @@ func TestRunnerDetonate(t *testing.T) {
 			}
 
 			if scenario[i].ExpectWarmedUp {
-				terraform.AssertCalled(t, "TerraformInitAndApply", mock.Anything)
+				terraform.AssertCalled(t, "InitAndApply", mock.Anything)
 			} else {
-				terraform.AssertNotCalled(t, "TerraformInitAndApply", mock.Anything)
+				terraform.AssertNotCalled(t, "InitAndApply", mock.Anything)
 			}
 
 			if scenario[i].ExpectDetonated {
@@ -280,7 +281,7 @@ func TestRunnerRevert(t *testing.T) {
 			state := new(statemocks.StateManager)
 			state.On("GetRootDirectory").Return("/root")
 			state.On("ExtractTechnique").Return(nil)
-			state.On("GetTerraformOutputs").Return(map[string]string{"foo": "bar"}, nil)
+			state.On("GetOutputs").Return(map[string]string{"foo": "bar"}, nil)
 			state.On("GetTechniqueState", mock.Anything).Return(scenario[i].TechniqueState)
 			state.On("SetTechniqueState", mock.Anything).Return(nil)
 
@@ -330,7 +331,7 @@ func TestRunnerCleanup(t *testing.T) {
 		ShouldForce           bool
 		InitialTechniqueState stratus.AttackTechniqueState
 		// results
-		CheckExpectations func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, err error)
+		CheckExpectations func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, err error)
 	}
 
 	var scenario = []RunnerCleanupTestScenario{
@@ -338,9 +339,9 @@ func TestRunnerCleanup(t *testing.T) {
 			Name:                  "Cleaning up an already cold technique without force flag",
 			Technique:             &stratus.AttackTechnique{ID: "foo", PrerequisitesTerraformCode: []byte("foo)")},
 			InitialTechniqueState: stratus.AttackTechniqueStatusCold,
-			CheckExpectations: func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, err error) {
+			CheckExpectations: func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, err error) {
 				assert.NotNil(t, err)
-				terraform.AssertNotCalled(t, "TerraformDestroy")
+				terraform.AssertNotCalled(t, "Destroy")
 				state.AssertNotCalled(t, "CleanupTechnique")
 			},
 		},
@@ -350,9 +351,9 @@ func TestRunnerCleanup(t *testing.T) {
 			Technique:             &stratus.AttackTechnique{ID: "foo", PrerequisitesTerraformCode: []byte("foo)")},
 			InitialTechniqueState: stratus.AttackTechniqueStatusCold,
 			ShouldForce:           true,
-			CheckExpectations: func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, err error) {
+			CheckExpectations: func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, err error) {
 				assert.Nil(t, err)
-				terraform.AssertCalled(t, "TerraformDestroy", mock.Anything)
+				terraform.AssertCalled(t, "Destroy", mock.Anything)
 				state.AssertCalled(t, "CleanupTechnique")
 			},
 		},
@@ -360,9 +361,9 @@ func TestRunnerCleanup(t *testing.T) {
 			Name:                  "Cleaning up a WARM technique",
 			Technique:             &stratus.AttackTechnique{ID: "foo", PrerequisitesTerraformCode: []byte("foo)")},
 			InitialTechniqueState: stratus.AttackTechniqueStatusWarm,
-			CheckExpectations: func(t *testing.T, terraform *mocks.TerraformManager, state *statemocks.StateManager, err error) {
+			CheckExpectations: func(t *testing.T, terraform *mocks.ConfigManager, state *statemocks.StateManager, err error) {
 				assert.Nil(t, err)
-				terraform.AssertCalled(t, "TerraformDestroy", mock.Anything)
+				terraform.AssertCalled(t, "Destroy", mock.Anything)
 				state.AssertCalled(t, "CleanupTechnique")
 				state.AssertCalled(t, "SetTechniqueState", stratus.AttackTechniqueState(stratus.AttackTechniqueStatusCold))
 			},
@@ -371,19 +372,19 @@ func TestRunnerCleanup(t *testing.T) {
 
 	for i := range scenario {
 		state := new(statemocks.StateManager)
-		terraform := new(mocks.TerraformManager)
+		terraform := new(mocks.ConfigManager)
 
 		state.On("GetRootDirectory").Return("/root")
 		state.On("ExtractTechnique").Return(nil)
 		state.On("GetTechniqueState", mock.Anything).Return(scenario[i].InitialTechniqueState, nil)
 		state.On("SetTechniqueState", mock.Anything).Return(nil)
 		state.On("CleanupTechnique").Return(nil)
-		terraform.On("TerraformDestroy", mock.Anything).Return(nil)
+		terraform.On("Destroy", mock.Anything).Return(nil)
 		runner := Runner{
-			Technique:        scenario[i].Technique,
-			ShouldForce:      scenario[i].ShouldForce,
-			TerraformManager: terraform,
-			StateManager:     state,
+			Technique:     scenario[i].Technique,
+			ShouldForce:   scenario[i].ShouldForce,
+			ConfigManager: terraform,
+			StateManager:  state,
 		}
 		runner.initialize()
 		err := runner.CleanUp()

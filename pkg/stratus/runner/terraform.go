@@ -3,32 +3,28 @@ package runner
 import (
 	"context"
 	"errors"
+	"log"
+	"os"
+	"path"
+	"path/filepath"
+
 	"github.com/datadog/stratus-red-team/internal/utils"
 	"github.com/hashicorp/go-version"
 	"github.com/hashicorp/hc-install/product"
 	"github.com/hashicorp/hc-install/releases"
 	"github.com/hashicorp/terraform-exec/tfexec"
-	"log"
-	"os"
-	"path"
-	"path/filepath"
 )
 
 const TerraformVersion = "1.1.2"
 
-type TerraformManager interface {
-	Initialize()
-	TerraformInitAndApply(directory string) (map[string]string, error)
-	TerraformDestroy(directory string) error
-}
-
-type TerraformManagerImpl struct {
+type TerraformManager struct {
 	terraformBinaryPath string
 	terraformVersion    string
+	directory           string
 }
 
-func NewTerraformManager(terraformBinaryPath string) TerraformManager {
-	manager := TerraformManagerImpl{
+func NewTerraformManager(terraformBinaryPath string) *TerraformManager {
+	manager := TerraformManager{
 		terraformVersion:    TerraformVersion,
 		terraformBinaryPath: terraformBinaryPath,
 	}
@@ -36,7 +32,7 @@ func NewTerraformManager(terraformBinaryPath string) TerraformManager {
 	return &manager
 }
 
-func (m *TerraformManagerImpl) Initialize() {
+func (m *TerraformManager) Initialize() {
 	// Download the Terraform binary if it doesn't exist already
 	if !utils.FileExists(m.terraformBinaryPath) {
 		terraformInstaller := &releases.ExactVersion{
@@ -53,8 +49,8 @@ func (m *TerraformManagerImpl) Initialize() {
 	}
 }
 
-func (m *TerraformManagerImpl) TerraformInitAndApply(directory string) (map[string]string, error) {
-	terraform, err := tfexec.NewTerraform(directory, m.terraformBinaryPath)
+func (m *TerraformManager) InitAndApply() (map[string]string, error) {
+	terraform, err := tfexec.NewTerraform(m.directory, m.terraformBinaryPath)
 	if err != nil {
 		return map[string]string{}, errors.New("unable to instantiate Terraform: " + err.Error())
 	}
@@ -64,7 +60,7 @@ func (m *TerraformManagerImpl) TerraformInitAndApply(directory string) (map[stri
 		return map[string]string{}, errors.New("unable to configure Terraform: " + err.Error())
 	}
 
-	terraformInitializedFile := path.Join(directory, ".terraform-initialized")
+	terraformInitializedFile := path.Join(m.directory, ".terraform-initialized")
 	if !utils.FileExists(terraformInitializedFile) {
 		log.Println("Initializing Terraform to spin up technique prerequisites")
 		err = terraform.Init(context.Background())
@@ -96,8 +92,8 @@ func (m *TerraformManagerImpl) TerraformInitAndApply(directory string) (map[stri
 	return outputs, nil
 }
 
-func (m *TerraformManagerImpl) TerraformDestroy(directory string) error {
-	terraform, err := tfexec.NewTerraform(directory, m.terraformBinaryPath)
+func (m *TerraformManager) Destroy() error {
+	terraform, err := tfexec.NewTerraform(m.directory, m.terraformBinaryPath)
 	if err != nil {
 		return err
 	}

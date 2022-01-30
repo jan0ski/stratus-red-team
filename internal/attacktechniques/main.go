@@ -22,4 +22,5 @@ import (
 	_ "github.com/datadog/stratus-red-team/internal/attacktechniques/aws/persistence/iam-create-admin-user"
 	_ "github.com/datadog/stratus-red-team/internal/attacktechniques/aws/persistence/iam-create-user-login-profile"
 	_ "github.com/datadog/stratus-red-team/internal/attacktechniques/aws/persistence/lambda-backdoor-function"
+	_ "github.com/datadog/stratus-red-team/internal/attacktechniques/kubernetes/privilege-escalation/hostpath-volume"
 )

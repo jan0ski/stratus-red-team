@@ -21,7 +21,7 @@ type AttackTechnique struct {
 	// see https://attack.mitre.org/techniques/enterprise/
 	MitreAttackTactics []mitreattack.Tactic
 
-	// The platform of the technique, e.g. AWS
+	// The platform of the technique, e.g. AWS, Kubernetes
 	Platform Platform
 
 	// Terraform code to apply to create the necessary prerequisites for the technique to be detonated

@@ -2,16 +2,17 @@ package state
 
 import (
 	"encoding/json"
-	"github.com/datadog/stratus-red-team/internal/utils"
-	"github.com/datadog/stratus-red-team/pkg/stratus"
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/datadog/stratus-red-team/internal/utils"
+	"github.com/datadog/stratus-red-team/pkg/stratus"
 )
 
 const StratusStateDirectoryName = ".stratus-red-team"
-const StratusStateTerraformOutputsFileName = ".terraform-outputs"
-const StratusStateTechniqueStateFileName = ".state"
+const StratusStateTerraformOutputsFileName = ".stratus-outputs"
+const StratusStateTechniqueStateFileName = ".stratus-state"
 const StratusStateTerraformFileName = "main.tf"
 
 type FileSystemStateManager struct {
@@ -55,8 +56,8 @@ type StateManager interface {
 	GetRootDirectory() string
 	ExtractTechnique() error
 	CleanupTechnique() error
-	GetTerraformOutputs() (map[string]string, error)
-	WriteTerraformOutputs(outputs map[string]string) error
+	GetOutputs() (map[string]string, error)
+	WriteOutputs(outputs map[string]string) error
 	GetTechniqueState() stratus.AttackTechniqueState
 	SetTechniqueState(state stratus.AttackTechniqueState) error
 }
@@ -100,11 +101,11 @@ func (m *FileSystemStateManager) CleanupTechnique() error {
 	return m.FileSystem.RemoveDirectory(m.getTechniqueStateDirectory())
 }
 
-func (m *FileSystemStateManager) GetTerraformOutputs() (map[string]string, error) {
+func (m *FileSystemStateManager) GetOutputs() (map[string]string, error) {
 	outputPath := m.getOutputsStateFile()
 	outputs := make(map[string]string)
 
-	// If we have persisted Terraform outputs on disk, read them
+	// If we have persisted outputs on disk, read them
 	if m.FileSystem.FileExists(outputPath) {
 		outputString, err := m.FileSystem.ReadFile(outputPath)
 		if err != nil {
@@ -119,7 +120,7 @@ func (m *FileSystemStateManager) GetTerraformOutputs() (map[string]string, error
 	return outputs, nil
 }
 
-func (m *FileSystemStateManager) WriteTerraformOutputs(outputs map[string]string) error {
+func (m *FileSystemStateManager) WriteOutputs(outputs map[string]string) error {
 	outputString, err := json.Marshal(outputs)
 	if err != nil {
 		return err

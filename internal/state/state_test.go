@@ -1,11 +1,12 @@
 package state
 
 import (
+	"testing"
+
 	"github.com/datadog/stratus-red-team/internal/state/mocks"
 	"github.com/datadog/stratus-red-team/pkg/stratus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"testing"
 )
 
 func noop(map[string]string) error {
@@ -95,7 +96,7 @@ func TestStateManagerRetrievesTechniqueOutputs(t *testing.T) {
 		FileSystem:    fsMock,
 	}
 	statemanager.Initialize()
-	outputs, err := statemanager.GetTerraformOutputs()
+	outputs, err := statemanager.GetOutputs()
 
 	assert.Nil(t, err)
 	assert.Len(t, outputs, 1)
@@ -104,7 +105,7 @@ func TestStateManagerRetrievesTechniqueOutputs(t *testing.T) {
 
 func TestStateManagerWritesTechniqueOutputs(t *testing.T) {
 	fsMock := new(mocks.FileSystemMock)
-	outputFile := "/root/.stratus-red-team/my-technique/.terraform-outputs"
+	outputFile := "/root/.stratus-red-team/my-technique/.stratus-outputs"
 	fsMock.On("FileExists", mock.Anything).Return(false)
 	fsMock.On("CreateDirectory", mock.Anything, mock.Anything).Return(nil)
 	fsMock.On("WriteFile", mock.Anything, mock.Anything, mock.Anything).Return(nil)
@@ -115,7 +116,7 @@ func TestStateManagerWritesTechniqueOutputs(t *testing.T) {
 		FileSystem:    fsMock,
 	}
 	statemanager.Initialize()
-	err := statemanager.WriteTerraformOutputs(map[string]string{"bar": "foo"})
+	err := statemanager.WriteOutputs(map[string]string{"bar": "foo"})
 
 	assert.Nil(t, err)
 	fsMock.AssertCalled(t, "WriteFile", outputFile, []byte("{\"bar\":\"foo\"}"), mock.Anything)
@@ -124,7 +125,7 @@ func TestStateManagerWritesTechniqueOutputs(t *testing.T) {
 func TestStateManagerReadsTechniqueState(t *testing.T) {
 	fsMock := new(mocks.FileSystemMock)
 	fsMock.On("FileExists", mock.Anything).Return(true)
-	fsMock.On("ReadFile", "/root/.stratus-red-team/my-technique/.state").Return([]byte(stratus.AttackTechniqueStatusCold), nil)
+	fsMock.On("ReadFile", "/root/.stratus-red-team/my-technique/.stratus-state").Return([]byte(stratus.AttackTechniqueStatusCold), nil)
 
 	statemanager := FileSystemStateManager{
 		RootDirectory: "/root/.stratus-red-team",
@@ -154,7 +155,7 @@ func TestStateManagerSetsTechniqueState(t *testing.T) {
 	assert.Nil(t, err)
 	fsMock.AssertCalled(t,
 		"WriteFile",
-		"/root/.stratus-red-team/my-technique/.state",
+		"/root/.stratus-red-team/my-technique/.stratus-state",
 		[]byte(stratus.AttackTechniqueStatusDetonated),
 		mock.Anything,
 	)
@@ -186,7 +187,7 @@ func TestStateManagerSetsTechniqueStateWhenTechniqueDirDoesNotExist(t *testing.T
 	)
 	fsMock.AssertCalled(t,
 		"WriteFile",
-		"/root/.stratus-red-team/my-technique/.state",
+		"/root/.stratus-red-team/my-technique/.stratus-state",
 		[]byte(stratus.AttackTechniqueStatusDetonated),
 		mock.Anything,
 	)
