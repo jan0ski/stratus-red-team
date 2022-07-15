@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+
 )
 
 const TerraformVersion = "1.1.2"
